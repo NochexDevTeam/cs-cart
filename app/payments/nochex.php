@@ -17,41 +17,85 @@ use Tygh\Http;
 if (!defined('BOOTSTRAP') && is_array($_POST)) {
     require './init_payment.php';
 
-    $post = array();
-    $post['transaction_id'] = $_REQUEST['transaction_id'];
-    $post['transaction_date'] = $_REQUEST['transaction_date'];
-    $post['from_email'] = $_REQUEST['from_email'];
-    $post['to_email'] = $_REQUEST['to_email'];
-    $post['order_id'] = $_REQUEST['order_id'];
-    $post['amount'] = $_REQUEST['amount'];
-    $post['security_key'] = $_REQUEST['security_key'];
+    $order_id = $_REQUEST['order_id'];
 
-    $order_id = (strpos($_REQUEST['order_id'], '_')) ? substr($_REQUEST['order_id'], 0, strpos($_REQUEST['order_id'], '_')) : $_REQUEST['order_id'];
+    if (strpos($order_id, '_')) {
+        $order_id = substr($order_id, 0, strpos($order_id, '_'));
+    }
+
+    if (!fn_check_payment_script('nochex.php', $order_id)) {
+        exit;
+    }
+
     $order_info = fn_get_order_info($order_id);
 
+    if (empty($order_info)) {
+        exit;
+    }
+
+if ($_REQUEST["optional_2"] = "Enabled") {
+
+	$postvars = http_build_query($_POST);
+
+    $result = Http::post('https://secure.nochex.com/callback/callback.aspx', $postvars);
+    $result = str_replace("\n", '&', $result);
+
+
+	$order_info['total'] = fn_format_price($order_info['total']);
+    $_REQUEST['amount']  = fn_format_price($_REQUEST['amount']);
+
+    $pp_response['order_status'] = ($result == 'AUTHORISED' && $order_info['total'] == $_REQUEST['amount']) ? 'P' : 'F';
+    $pp_response["reason_text"] = "SecurityKey: {$_REQUEST['security_key']}, Transaction Date: {$_REQUEST['transaction_date']}";
+
+    if ($order_info['total'] != $_REQUEST['amount']) {
+        $pp_response['reason_text'] .= '; ' . __('order_total_not_correct');
+    }
+
+    $pp_response['transaction_id'] = $_REQUEST['transaction_id'];
+
+} else {
+
+    $post = array(
+        'transaction_id' => $_REQUEST['transaction_id'],
+        'transaction_date' => $_REQUEST['transaction_date'],
+        'from_email' => $_REQUEST['from_email'],
+        'to_email' => $_REQUEST['to_email'],
+        'order_id' => $_REQUEST['order_id'],
+        'amount' => $_REQUEST['amount'],
+        'security_key' => $_REQUEST['security_key']
+    );
+
     // Post a request and analyse the response
-    $return = Http::post("https://www.nochex.com/apcnet/apc.aspx", $post);
-    $result = str_replace("\n","&", $return);
+    $result = Http::post('https://www.nochex.com/apcnet/apc.aspx', $post);
+    $result = str_replace("\n", '&', $result);
 
     $order_info['total'] = fn_format_price($order_info['total']);
     $_REQUEST['amount']  = fn_format_price($_REQUEST['amount']);
 
     $pp_response['order_status'] = ($result == 'AUTHORISED' && $order_info['total'] == $_REQUEST['amount']) ? 'P' : 'F';
-    $pp_response["reason_text"] = "SecurityKey: $_REQUEST[security_key], Transaction Date: $_REQUEST[transaction_date], Transaction Status: $_REQUEST[status], Result: $result";
+    $pp_response["reason_text"] = "SecurityKey: {$_REQUEST['security_key']}, Transaction Date: {$_REQUEST['transaction_date']}";
+
     if ($order_info['total'] != $_REQUEST['amount']) {
-        $pp_response["reason_text"] .= '; ' . __('order_total_not_correct');
+        $pp_response['reason_text'] .= '; ' . __('order_total_not_correct');
     }
-    $pp_response["transaction_id"] = $_REQUEST['transaction_id'];
+
+    $pp_response['transaction_id'] = $_REQUEST['transaction_id'];
+}
 
     fn_finish_payment($order_id, $pp_response);
     exit;
 
 } elseif (defined('PAYMENT_NOTIFICATION')) {
+
     if ($mode == 'notify') {
-        $order_info = fn_get_order_info($_REQUEST['order_id']);
-        if ($order_info['status'] == 'O') {
-            $pp_response['order_status'] = 'F';
-            fn_finish_payment($_REQUEST['order_id'], $pp_response, false);
+
+        if (fn_check_payment_script('nochex.php', $_REQUEST['order_id'])) {
+            $order_info = fn_get_order_info($_REQUEST['order_id']);
+
+            if ($order_info['status'] == 'O') {
+                $pp_response['order_status'] = 'F';
+                fn_finish_payment($_REQUEST['order_id'], $pp_response, false);
+            }
         }
 
         fn_order_placement_routines('route', $_REQUEST['order_id']);
@@ -64,92 +108,76 @@ if (!defined('BOOTSTRAP') && is_array($_POST)) {
     $return_url_c = fn_url("payment_notification.notify?payment=nochex&order_id=$order_id", AREA, 'current');
     $responder_url = fn_payment_url('current', "nochex.php");
     $_order_id = ($order_info['repaid']) ? ($order_id . '_' . $order_info['repaid']) : $order_id;
-
-
-$products = $order_info['products'];
-
-
-$description = "";
-$xmlcollection = "<items>";
-
-foreach($products as $key => $item ){
-
-$description .= "Product: " . $item['product'] . ", Quantity: " . $item['amount'] . ", Price: " . $item["price"] . "  ";
-
-$xmlcollection .= "<item><id>".$item['product_id']."</id><name>".$item['product']."</name><description>".$item['product']."</description><quantity>".$item['amount']."</quantity><price>".$item["price"]."</price></item> ";
-
-}
-
-$description .= "";
-$xmlcollection .= "</items>";
-
-
-if($processor_data['processor_params'][testmode] == "test"){
-
-$testMode = "100";
-
-}
-
-if($processor_data['processor_params'][xmlMode] == "Yes"){
-
-$xmlPcollection = $xmlcollection;
-$descriptionP = "Order created for: " . $_order_id;
-
-}else{
-
-$descriptionP = $description;
-$xmlPcollection = "";
-}
-
-/*if($processor_data['processor_params'][xmlMode] == "yes"){
-
-
-}
-*/
-//print_r($order_info);
-
-if($processor_data['processor_params'][postAmt] == "Yes"){
-
-$pstAmt = $order_info['shipping_cost'];
-$amt = $order_info['subtotal'];
-
-}else{
-
-$amt = $order_info['total'];
-}
-
-if($processor_data['processor_params'][HideM] == "Yes"){
-
-$hideBilling = "1";
-
-}
+	
+	if ($processor_data['processor_params']['testmode'] === "Y") {
+		$testmode = "100";
+	} else {
+		$testmode = "";
+	}
+	
+	$ordered_products = "";
+	$xml_collection = "<items>";
+	
+	foreach ($order_info['products'] as $key => $value){	
+		$ordered_products .= $value['product'] . " - " . $value['amount'] . " X " . $value['price'];
+		$xml_collection .= "<item><id></id><name>".$value['product']."</name><description></description><quantity>".$value['amount']."</quantity><price>".$value['price']."</price></item>";
+	}
+	
+	$xml_collection .= "</items>";
+	
+	if ($processor_data['processor_params']['detailmode'] === "Y") {
+		$ordered_products = $processor_data['processor_params']['payment_description'];
+	} else {
+		$xml_collection = "";
+	}
+	
+	if ($processor_data['processor_params']['hidemode'] === "Y") {
+		$hide_billing = "true";
+	} else {
+		$hide_billing = "";
+	}
+	
+	if ($processor_data['processor_params']['postmode'] === "Y") {
+		$orderTotal = $order_info['total'] - $order_info['shipping_cost'];
+		$postage = $order_info['shipping_cost'];
+	} else {
+		$orderTotal = $order_info['total'];
+		$postage = 0;
+	}
+	
+	$cleanNumber = str_replace("+","",$order_info['phone']);
+	$cleanNumber = str_replace("(","",$cleanNumber);
+	$cleanNumber = str_replace(")","",$cleanNumber);
+	$cleanNumber = str_replace("-","",$cleanNumber);
+	
     $post_data = array(
         'merchant_id' => $processor_data['processor_params']['merchantid'],
-        'amount' => $amt,
-        'postage' => $pstAmt,
-        'description' => $descriptionP,
-        'xml_item_collection' => $xmlPcollection,
+        'amount' => $orderTotal,
+        'postage' => $postage,
+        'description' => $ordered_products,
+        'xml_item_collection' => $xml_collection,
         'order_id' => $_order_id,
-        'success_url' => $return_url_s,        
-        'test_success_url' => $return_url_s,        
+        'test_transaction' => $testmode,
+        'test_success_url' => $return_url_s,
+        'success_url' => $return_url_s,
         'cancel_url' => $return_url_c,
-		'hide_billing_details' => $hideBilling,
         'callback_url' => $responder_url,
+		'hide_billing_details' => $hide_billing,
         'billing_fullname' => $order_info['b_firstname'] . ' ' . $order_info['b_lastname'],
-        'billing_address' => $order_info['b_address'] . ' ' . $order_info['b_address_2'],		
+        'billing_address' => $order_info['b_address'] . ' ' . $order_info['b_address_2'],
         'billing_city' => $order_info['b_city'],
-        'billing_state' => $order_info['b_state'],
         'billing_postcode' => $order_info['b_zipcode'],
         'delivery_fullname' => $order_info['s_firstname'] . ' ' . $order_info['s_lastname'],
         'delivery_address' => $order_info['s_address'] . ' ' . $order_info['s_address_2'],
-		'delivery_city' => $order_info['s_city'],
-		'delivery_state' => $order_info['s_state'],
-        'delivery_postcode' => $order_info['b_zipcode'],
+        'delivery_city' => $order_info['s_city'],
+        'delivery_postcode' => $order_info['s_zipcode'],
         'email_address' => $order_info['email'],
-        'test_transaction' => $testMode,
-        'customer_phone_number' => $order_info['phone'],        
+        'customer_phone_number' => $cleanNumber,
+        'optional_2' => "Enabled",
     );
-//
-    fn_create_payment_form('https://secure.nochex.com', $post_data, 'Nochex');
+
+    fn_create_payment_form('https://secure.nochex.com/default.aspx', $post_data, 'Nochex');
+
 }
+
 exit;
