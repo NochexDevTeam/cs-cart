@@ -33,7 +33,7 @@ if (!defined('BOOTSTRAP') && is_array($_POST)) {
         exit;
     }
 
-if ($_REQUEST["optional_2"] = "Enabled") {
+if ($_REQUEST["optional_2"] == "Enabled") {
 
 	$postvars = http_build_query($_POST);
 
