@@ -66,7 +66,7 @@ if ($_REQUEST["optional_2"] == "Enabled") {
     );
 
     // Post a request and analyse the response
-    $result = Http::post('https://www.nochex.com/apcnet/apc.aspx', $post);
+    $result = Http::post('https://secure.nochex.com/apc/apc.aspx', $post);
     $result = str_replace("\n", '&', $result);
 
     $order_info['total'] = fn_format_price($order_info['total']);
