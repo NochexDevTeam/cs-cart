@@ -13,6 +13,10 @@ Visit our Knowledgebase for support: https://support.nochex.com/
 Changelog
 ====
 
+= 2.1
+
+ - Small change to APC
+
 = 2.0
 
  - New features added; callback, xml item collection, separate postage, hide billing
